@@ -41,7 +41,7 @@ const chatSchema = new mongoose.Schema({
 chatSchema.index({ updatedAt: -1 });
 
 // Compound index to find chat between two users
-chatSchema.index({ participants: 1 }, { unique: true });
+//chatSchema.index({ participants: 1 }, { unique: true });
 
 const Chat = mongoose.model('Chat', chatSchema);
 

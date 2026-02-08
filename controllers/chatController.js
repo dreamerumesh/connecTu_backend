@@ -10,7 +10,7 @@ exports.getMyChats = async (req, res) => {
     const chats = await Chat.find({
       participants: userId
     })
-      .populate('participants', 'name phone profilePic isOnline')
+      .populate('participants', 'name phone profilePic isOnline lastSeen')
       .sort({ updatedAt: -1 })
       .limit(5); // or any X value
 
@@ -132,6 +132,12 @@ exports.sendMessage = async (req, res, next) => {
     };
     chat.updatedAt = new Date();
     await chat.save();
+
+    const io = req.app.get("io"); // socket.io emit
+    if (io) { // socket.io emit
+      io.to(chat._id.toString()).emit("receive-message", message); // socket.io emit
+      console.log("Emitted to chat:", chat._id.toString()); // socket.io emit
+    } // socket.io emit
 
     res.status(201).json({
       success: true,
