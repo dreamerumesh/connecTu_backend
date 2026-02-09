@@ -21,5 +21,10 @@ router.post('/send', protect, chatController.sendMessage);
 // Edit a message
 router.put('/edit-message', protect, chatController.editMessage);
 
+// create a new chat (optional, can be done implicitly when sending first message)
+router.post('/create', protect, chatController.createChat);
+
+// get contacts
+router.get('/contacts', protect, chatController.getContacts);
 
 module.exports = router;

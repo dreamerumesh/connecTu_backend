@@ -7,23 +7,39 @@ exports.getMyChats = async (req, res) => {
   try {
     const userId = req.user.id;
 
+    // 1️⃣ Fetch logged-in user's contacts
+    const me = await User.findById(userId).select('contacts');
+
     const chats = await Chat.find({
       participants: userId
     })
-      .populate('participants', 'name phone profilePic isOnline lastSeen')
+      .populate('participants', 'phone profilePic isOnline lastSeen')
+      .populate('lastMessage', 'text createdAt')
       .sort({ updatedAt: -1 })
-      .limit(5); // or any X value
+      .limit(5);
 
     const chatList = chats.map(chat => {
       const otherUser = chat.participants.find(
         u => u._id.toString() !== userId
       );
 
+      // 2️⃣ Find contact name if exists
+      const savedContact = me.contacts.find(
+        c => c.phone === otherUser.phone
+      );
+
       return {
         chatId: chat._id,
-        user: otherUser,
-        lastMessage: chat.lastMessage.text,
-        lastMessageTime: chat.lastMessage.time
+        user: {
+          _id: otherUser._id,
+          phone: otherUser.phone,
+          name: savedContact ? savedContact.name : otherUser.phone,
+          profilePic: otherUser.profilePic,
+          isOnline: otherUser.isOnline,
+          lastSeen: otherUser.lastSeen
+        },
+        lastMessage: chat.lastMessage?.text || null,
+        lastMessageTime: chat.lastMessage?.createdAt || null
       };
     });
 
@@ -31,6 +47,7 @@ exports.getMyChats = async (req, res) => {
       success: true,
       chats: chatList
     });
+
   } catch (err) {
     res.status(500).json({
       success: false,
@@ -38,6 +55,7 @@ exports.getMyChats = async (req, res) => {
     });
   }
 };
+
 
 exports.getChatMessages = async (req, res) => {
   try {
@@ -213,6 +231,102 @@ exports.editMessage = async (req, res) => {
     });
   }
 };
+
+exports.createChat = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, phone } = req.body;
+
+    if (!name || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'name and phone are required'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const receiver = await User.findOne({ phone });
+    // 4️⃣ Check if chat already exists
+    const existingChat = await Chat.findOne({
+      participants: { $all: [userId, receiver._id] }
+    });
+
+    if (existingChat) {
+      return res.status(200).json({
+        success: true,
+        chat: existingChat
+      });
+    }
+
+    // 1️⃣ Check if contact already exists
+    const existingContact = user.contacts.find(
+      c => c.phone === phone
+    );
+
+    if (existingContact) {
+      return res.status(400).json({
+        success: false,
+        message: `This contact is already saved as "${existingContact.name}"`
+      });
+    }
+
+    // 2️⃣ Check receiver exists in app
+    if (!receiver) {
+      return res.status(404).json({
+        success: false,
+        message: 'This phone number is not registered on ConnecTu'
+      });
+    }
+
+    // 3️⃣ Save contact to user
+    user.contacts.push({ name, phone });
+    await user.save();
+
+
+    // 5️⃣ Create empty chat
+    const chat = await Chat.create({
+      participants: [userId, receiver._id]
+    });
+
+    res.status(201).json({
+      success: true,
+      chat
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create chat'
+    });
+  }
+};
+
+exports.getContacts = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id)
+      .select('contacts');
+
+    res.status(200).json({
+      success: true,
+      contacts: user.contacts
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch contacts'
+    });
+  }
+};
+
 
 
 

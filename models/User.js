@@ -45,7 +45,13 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'inactive', 'banned'],
     default: 'active'
-  }
+  },
+  contacts: [
+    {
+      phone: String,
+      name: String
+    }
+  ]
 }, {
   timestamps: true
 });
