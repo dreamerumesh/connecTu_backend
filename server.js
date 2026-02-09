@@ -1,6 +1,7 @@
 const dotenv = require("dotenv");
 const jwt = require("jsonwebtoken");
 const User = require("./models/User");
+const Chat = require("./models/Chat");
 
 dotenv.config();
 
@@ -19,6 +20,14 @@ const io = new Server(server, { // socket.io server
 }); // socket.io server
 app.set("io", io); // socket.io server
 
+async function getUserChatIds(userId) {
+  const chats = await Chat.find(
+    { participants: userId },
+    { _id: 1 } // only fetch _id
+  ).lean();
+
+  return chats.map(chat => chat._id.toString());
+}
 
 io.on("connection", async (socket) => {
   console.log("New client connected:", socket.id);
@@ -49,11 +58,47 @@ io.on("connection", async (socket) => {
     }
   }
 
-  // 🏠 join chat room
-  socket.on("join-chat", (chatId) => {
-    if (chatId) {
+  try {
+    const userId = socket.userId;
+
+    const chatIds = await getUserChatIds(userId);
+
+    chatIds.forEach((chatId) => {
       socket.join(chatId);
-      console.log("Socket", socket.id, "joined room", chatId);
+    });
+
+    //console.log("🟢 User", userId, "joined chats:", chatIds);
+  } catch (err) {
+    console.error("❌ Error joining chat rooms:", err);
+  }
+
+  // 🏠 join chat room
+  // socket.on("join-chat", (chatId) => {
+  //   if (chatId) {
+  //     socket.join(chatId);
+  //     console.log("Socket", socket.id, "joined room", chatId);
+  //   }
+  // });
+
+  // ⌨️ TYPING START - broadcast to chat room
+  socket.on("typing-start", (chatId) => {
+    if (chatId && socket.userId) {
+      socket.to(chatId).emit("user-typing", {
+        userId: socket.userId,
+        chatId: chatId,
+      });
+      console.log("User", socket.userId, "is typing in chat", chatId);
+    }
+  });
+
+  // ⌨️ TYPING STOP - broadcast to chat room
+  socket.on("typing-stop", (chatId) => {
+    if (chatId && socket.userId) {
+      socket.to(chatId).emit("user-typing-stop", {
+        userId: socket.userId,
+        chatId: chatId,
+      });
+      console.log("User", socket.userId, "stopped typing in chat", chatId);
     }
   });
 
