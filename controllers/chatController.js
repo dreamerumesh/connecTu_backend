@@ -207,17 +207,17 @@ exports.editMessage = async (req, res) => {
     await message.save();
 
     // 4️⃣ Update chat lastMessage if needed
-    const chat = await Chat.findById(message.chatId);
+    // const chat = await Chat.findById(message.chatId);
 
-    if (
-      chat &&
-      chat.lastMessage &&
-      chat.lastMessage.time.getTime() === message.createdAt.getTime()
-    ) {
-      chat.lastMessage.text = newContent;
-      chat.lastMessage.time = new Date();
-      await chat.save();
-    }
+    // if (
+    //   chat &&
+    //   chat.lastMessage &&
+    //   chat.lastMessage.time.getTime() === message.createdAt.getTime()
+    // ) {
+    //   chat.lastMessage.text = newContent;
+    //   chat.lastMessage.time = new Date();
+    //   await chat.save();
+    // }
 
     res.status(200).json({
       success: true,
@@ -253,6 +253,14 @@ exports.createChat = async (req, res) => {
     }
 
     const receiver = await User.findOne({ phone });
+
+     if (!receiver) {
+      return res.status(404).json({
+        success: false,
+        message: 'This phone number is not registered on ConnecTu'
+      });
+    }
+    
     // 4️⃣ Check if chat already exists
     const existingChat = await Chat.findOne({
       participants: { $all: [userId, receiver._id] }
@@ -274,14 +282,6 @@ exports.createChat = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `This contact is already saved as "${existingContact.name}"`
-      });
-    }
-
-    // 2️⃣ Check receiver exists in app
-    if (!receiver) {
-      return res.status(404).json({
-        success: false,
-        message: 'This phone number is not registered on ConnecTu'
       });
     }
 
