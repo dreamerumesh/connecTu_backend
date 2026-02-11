@@ -72,13 +72,6 @@ io.on("connection", async (socket) => {
     console.error("❌ Error joining chat rooms:", err);
   }
 
-  // 🏠 join chat room
-  // socket.on("join-chat", (chatId) => {
-  //   if (chatId) {
-  //     socket.join(chatId);
-  //     console.log("Socket", socket.id, "joined room", chatId);
-  //   }
-  // });
 
   // ⌨️ TYPING START - broadcast to chat room
   socket.on("typing-start", (chatId) => {

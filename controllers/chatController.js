@@ -7,41 +7,62 @@ exports.getMyChats = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // 1️⃣ Fetch logged-in user's contacts
     const me = await User.findById(userId).select('contacts');
 
     const chats = await Chat.find({
       participants: userId
     })
       .populate('participants', 'phone profilePic isOnline lastSeen')
-      .populate('lastMessage', 'text createdAt')
-      .sort({ updatedAt: -1 })
-      .limit(5);
+      .sort({ updatedAt: -1 });
 
-    const chatList = chats.map(chat => {
-      const otherUser = chat.participants.find(
-        u => u._id.toString() !== userId
-      );
+    const chatList = await Promise.all(
+      chats.map(async (chat) => {
 
-      // 2️⃣ Find contact name if exists
-      const savedContact = me.contacts.find(
-        c => c.phone === otherUser.phone
-      );
+        const otherUser = chat.participants.find(
+          u => u._id.toString() !== userId
+        );
 
-      return {
-        chatId: chat._id,
-        user: {
-          _id: otherUser._id,
-          phone: otherUser.phone,
-          name: savedContact ? savedContact.name : otherUser.phone,
-          profilePic: otherUser.profilePic,
-          isOnline: otherUser.isOnline,
-          lastSeen: otherUser.lastSeen
-        },
-        lastMessage: chat.lastMessage?.text || null,
-        lastMessageTime: chat.lastMessage?.createdAt || null
-      };
-    });
+        const savedContact = me.contacts.find(
+          c => c.phone === otherUser.phone
+        );
+
+        // 🔥 Get clear timestamp
+        const clearInfo = chat.clearedBy?.find(
+          c => c.user.toString() === userId
+        );
+
+        let messageFilter = {
+          chatId: chat._id,
+          $and: [
+            { isDeletedForEveryone: { $ne: true } },
+            { deletedFor: { $nin: [userId] } }
+          ]
+        };
+
+        if (clearInfo) {
+          messageFilter.createdAt = { $gt: clearInfo.clearedAt };
+        }
+
+        const lastMessage = await Message.findOne(messageFilter)
+          .sort({ createdAt: -1 });
+       // console.log("Last message for chat", chat._id, ":", lastMessage);
+        return {
+          chatId: chat._id,
+          user: {
+            _id: otherUser._id,
+            phone: otherUser.phone,
+            name: savedContact
+              ? savedContact.name
+              : otherUser.phone,
+            profilePic: otherUser.profilePic,
+            isOnline: otherUser.isOnline,
+            lastSeen: otherUser.lastSeen
+          },
+          lastMessage: lastMessage?.content || null,
+          lastMessageTime: lastMessage?.createdAt || null
+        };
+      })
+    );
 
     res.status(200).json({
       success: true,
@@ -62,7 +83,7 @@ exports.getChatMessages = async (req, res) => {
     const { chatId } = req.params;
     const userId = req.user.id;
 
-    // Check chat exists & user is participant
+    // 1️⃣ Check chat exists & user is participant
     const chat = await Chat.findOne({
       _id: chatId,
       participants: userId
@@ -71,17 +92,34 @@ exports.getChatMessages = async (req, res) => {
     if (!chat) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied'
+        message: "Access denied"
       });
     }
 
-    const messages = await Message.find({ chatId })
-      .sort({ 'timestamps.sentAt': 1 });
+    // 2️⃣ Find if user cleared this chat
+    const clearEntry = chat.clearedBy.find(
+      c => c.user.toString() === userId
+    );
+
+    let filter = {
+      chatId,
+      isDeletedForEveryone: false,
+      deletedFor: { $ne: userId }
+    };
+
+    // 3️⃣ If chat was cleared → show only new messages
+    if (clearEntry) {
+      filter.createdAt = { $gt: clearEntry.clearedAt };
+    }
+
+    const messages = await Message.find(filter)
+      .sort({ createdAt: 1 });
 
     res.status(200).json({
       success: true,
       messages
     });
+
   } catch (err) {
     res.status(500).json({
       success: false,
@@ -323,6 +361,128 @@ exports.getContacts = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch contacts'
+    });
+  }
+};
+
+exports.deleteMessageForMe = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { messageId } = req.body;
+
+    const message = await Message.findById(messageId);
+
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: "Message not found"
+      });
+    }
+
+    // Add userId to deletedFor array
+    await Message.findByIdAndUpdate(
+      messageId,
+      { $addToSet: { deletedFor: userId } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Message deleted for you"
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+};
+
+exports.deleteMessageForEveryone = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { messageId } = req.body;
+
+    const message = await Message.findById(messageId);
+
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: "Message not found"
+      });
+    }
+
+    // Allow only sender to delete for everyone
+    if (message.sender.toString() !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized"
+      });
+    }
+
+    message.isDeletedForEveryone = true;
+    message.content = "This message was deleted";
+    await message.save();
+
+     const io = req.app.get("io"); // socket.io emit
+    if (io) { // socket.io emit
+      io.to(message.chatId.toString()).emit("message-deleted-for-everyone", {
+        messageId: message._id,
+        chatId: message.chatId
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Message deleted for everyone"
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+};
+
+exports.clearChat = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { chatId } = req.body;
+    //console.log("body in clearChat:", req.body);
+    //console.log("chatId in clearChat:", chatId);
+
+    const chat = await Chat.findById(chatId);
+
+    if (!chat) {
+      return res.status(404).json({
+        success: false,
+        message: "Chat not found"
+      });
+    }
+
+    // Remove old clear entry if exists
+    chat.clearedBy = chat.clearedBy.filter(
+      c => c.user.toString() !== userId
+    );
+
+    // Add new clear timestamp
+    chat.clearedBy.push({
+      user: userId,
+      clearedAt: new Date()
+    });
+
+    await chat.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Chat cleared successfully"
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
     });
   }
 };

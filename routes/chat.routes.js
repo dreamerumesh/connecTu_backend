@@ -27,4 +27,13 @@ router.post('/create', protect, chatController.createChat);
 // get contacts
 router.get('/contacts', protect, chatController.getContacts);
 
+// delete a message for me
+router.delete('/delete-message', protect, chatController.deleteMessageForMe);
+
+// delete a message for everyone
+router.delete('/delete-message-for-everyone', protect, chatController.deleteMessageForEveryone);
+
+// clear chat history
+router.delete('/clear-chat', protect, chatController.clearChat);
+
 module.exports = router;

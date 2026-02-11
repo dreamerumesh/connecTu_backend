@@ -51,7 +51,9 @@ const messageSchema = new mongoose.Schema({
       type: Date,
       default: null
     }
-  }
+  },
+  deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  isDeletedForEveryone: { type: Boolean, default: false }
 }, {
   timestamps: true
 });
@@ -61,7 +63,10 @@ messageSchema.index({ chatId: 1, 'timestamps.sentAt': -1 });
 messageSchema.index({ sender: 1 });
 messageSchema.index({ receiver: 1 });
 messageSchema.index({ status: 1 });
-
+messageSchema.index({ 
+  createdAt: -1, 
+  isDeletedForEveryone: 1 
+});
 // Update status timestamps automatically
 messageSchema.methods.markAsDelivered = function() {
   this.status = 'delivered';

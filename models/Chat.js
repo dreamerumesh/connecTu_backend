@@ -23,7 +23,11 @@ const chatSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now
-  }
+  },
+  clearedBy: [{
+   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+   clearedAt: { type: Date }
+}]
 }, {
   timestamps: true
 });
