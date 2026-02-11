@@ -15,10 +15,21 @@ connectDB();
 const PORT = process.env.PORT || 5000;
 
 const server = http.createServer(app); // socket.io server
-const io = new Server(server, { // socket.io server
-  cors: { origin: "*", methods: ["GET", "POST"] }, // socket.io server
-}); // socket.io server
-app.set("io", io); // socket.io server
+// const io = new Server(server, { // socket.io server
+//   cors: { origin: "*", methods: ["GET", "POST"] }, // socket.io server
+// }); // socket.io server
+// app.set("io", io); // socket.io server
+
+const io = new Server(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL,
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+});
+
+app.set("io", io);
+
 
 async function getUserChatIds(userId) {
   const chats = await Chat.find(
