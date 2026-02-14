@@ -45,7 +45,7 @@ exports.getMyChats = async (req, res) => {
 
         const lastMessage = await Message.findOne(messageFilter)
           .sort({ createdAt: -1 });
-       // console.log("Last message for chat", chat._id, ":", lastMessage);
+      // console.log("Last message for chat", chat._id, ":", lastMessage);
         return {
           chatId: chat._id,
           user: {
@@ -273,15 +273,16 @@ exports.editMessage = async (req, res) => {
 exports.createChat = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, phone } = req.body;
+    const { name, phone, isNewContact } = req.body;
 
-    if (!name || !phone) {
+    if (!phone) {
       return res.status(400).json({
         success: false,
-        message: 'name and phone are required'
+        message: 'Phone is required'
       });
     }
 
+    // 1️⃣ Logged-in user
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({
@@ -290,59 +291,114 @@ exports.createChat = async (req, res) => {
       });
     }
 
+    // 2️⃣ Find receiver
     const receiver = await User.findOne({ phone });
-
-     if (!receiver) {
+    if (!receiver) {
       return res.status(404).json({
         success: false,
         message: 'This phone number is not registered on ConnecTu'
       });
     }
-    
-    // 4️⃣ Check if chat already exists
-    const existingChat = await Chat.findOne({
+
+    // 3️⃣ Check existing chat
+    let chat = await Chat.findOne({
       participants: { $all: [userId, receiver._id] }
     });
 
-    if (existingChat) {
-      return res.status(200).json({
-        success: true,
-        chat: existingChat
+    // 4️⃣ Contact handling
+    const existingContact = user.contacts.find(c => c.phone === phone);
+
+    if (isNewContact) {
+      if (existingContact) {
+        return res.status(400).json({
+          success: false,
+          message: `This contact is already saved as "${existingContact.name}"`
+        });
+      }
+
+      if (!name) {
+        return res.status(400).json({
+          success: false,
+          message: 'Name is required for new contact'
+        });
+      }
+
+      user.contacts.push({ name, phone });
+      await user.save();
+    }
+
+    // ===============================
+    // CHAT HANDLING
+    // ===============================
+
+    // Create if not exists
+    if (!chat) {
+      chat = await Chat.create({
+        participants: [userId, receiver._id]
       });
     }
 
-    // 1️⃣ Check if contact already exists
-    const existingContact = user.contacts.find(
-      c => c.phone === phone
+    // Populate participants (same as getMyChats)
+    chat = await Chat.findById(chat._id)
+      .populate('participants', 'phone profilePic isOnline lastSeen');
+
+    const me = await User.findById(userId).select('contacts');
+
+    const otherUser = chat.participants.find(
+      u => u._id.toString() !== userId
     );
 
-    if (existingContact) {
-      return res.status(400).json({
-        success: false,
-        message: `This contact is already saved as "${existingContact.name}"`
-      });
+    const savedContact = me.contacts.find(
+      c => c.phone === otherUser.phone
+    );
+
+    // Get last message (same filter logic as getMyChats)
+    const clearInfo = chat.clearedBy?.find(
+      c => c.user.toString() === userId
+    );
+
+    let messageFilter = {
+      chatId: chat._id,
+      $and: [
+        { isDeletedForEveryone: { $ne: true } },
+        { deletedFor: { $nin: [userId] } }
+      ]
+    };
+
+    if (clearInfo) {
+      messageFilter.createdAt = { $gt: clearInfo.clearedAt };
     }
 
-    // 3️⃣ Save contact to user
-    user.contacts.push({ name, phone });
-    await user.save();
+    const lastMessage = await Message.findOne(messageFilter)
+      .sort({ createdAt: -1 });
 
+    // Final response (same structure as getMyChats)
+    const chatData = {
+      chatId: chat._id,
+      user: {
+        _id: otherUser._id,
+        phone: otherUser.phone,
+        name: savedContact
+          ? savedContact.name
+          : otherUser.phone,
+        profilePic: otherUser.profilePic,
+        isOnline: otherUser.isOnline,
+        lastSeen: otherUser.lastSeen
+      },
+      lastMessage: lastMessage?.content || null,
+      lastMessageTime: lastMessage?.createdAt || null
+    };
 
-    // 5️⃣ Create empty chat
-    const chat = await Chat.create({
-      participants: [userId, receiver._id]
-    });
-
-    res.status(201).json({
+    return res.status(200).json({
       success: true,
-      chat
+      chat: chatData
     });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({
       success: false,
-      message: 'Failed to create chat'
+      message: 'Failed to create or fetch chat'
     });
   }
 };
