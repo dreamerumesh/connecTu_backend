@@ -45,7 +45,20 @@ exports.getMyChats = async (req, res) => {
 
         const lastMessage = await Message.findOne(messageFilter)
           .sort({ createdAt: -1 });
-      // console.log("Last message for chat", chat._id, ":", lastMessage);
+
+        // 🔥 Count unread messages
+        const unreadCount = await Message.countDocuments({
+          chatId: chat._id,
+          receiver: userId,
+          status: { $ne: "read" },
+          createdAt: messageFilter.createdAt || { $exists: true }, // Respect clear chat filter
+          $and: [
+            { isDeletedForEveryone: { $ne: true } },
+            { deletedFor: { $nin: [userId] } }
+          ]
+        });
+
+        // console.log("Last message for chat", chat._id, ":", lastMessage);
         return {
           chatId: chat._id,
           user: {
@@ -59,7 +72,8 @@ exports.getMyChats = async (req, res) => {
             lastSeen: otherUser.lastSeen
           },
           lastMessage: lastMessage?.content || null,
-          lastMessageTime: lastMessage?.createdAt || null
+          lastMessageTime: lastMessage?.createdAt || null,
+          unreadCount: unreadCount || 0
         };
       })
     );
@@ -480,7 +494,7 @@ exports.deleteMessageForEveryone = async (req, res) => {
     message.content = "This message was deleted";
     await message.save();
 
-     const io = req.app.get("io"); // socket.io emit
+    const io = req.app.get("io"); // socket.io emit
     if (io) { // socket.io emit
       io.to(message.chatId.toString()).emit("message-deleted-for-everyone", {
         messageId: message._id,
