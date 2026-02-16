@@ -259,17 +259,33 @@ exports.editMessage = async (req, res) => {
     await message.save();
 
     // 4️⃣ Update chat lastMessage if needed
-    // const chat = await Chat.findById(message.chatId);
+    const chat = await Chat.findById(message.chatId);
 
-    // if (
-    //   chat &&
-    //   chat.lastMessage &&
-    //   chat.lastMessage.time.getTime() === message.createdAt.getTime()
-    // ) {
-    //   chat.lastMessage.text = newContent;
-    //   chat.lastMessage.time = new Date();
-    //   await chat.save();
-    // }
+    // Check if it is the most recent message
+    const lastMsg = await Message.findOne({ chatId: message.chatId, isDeletedForEveryone: false }).sort({ createdAt: -1 });
+
+    const isLastMessage = lastMsg && lastMsg._id.toString() === messageId;
+
+    if (isLastMessage) {
+      chat.lastMessage = {
+        text: newContent,
+        sender: userId,
+        time: message.createdAt // keep original time
+      };
+      await chat.save();
+    }
+
+    // 5️⃣ Emit socket event
+    const io = req.app.get("io");
+    if (io) {
+      io.to(message.chatId.toString()).emit("message-updated", {
+        messageId: message._id,
+        chatId: message.chatId,
+        newContent: newContent,
+        isEdited: true,
+        isLastMessage: isLastMessage // 🆕 Flag for frontend to update chat list
+      });
+    }
 
     res.status(200).json({
       success: true,

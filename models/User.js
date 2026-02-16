@@ -51,7 +51,7 @@ const userSchema = new mongoose.Schema({
       phone: String,
       name: String
     }
-  ]
+  ],
 }, {
   timestamps: true
 });
